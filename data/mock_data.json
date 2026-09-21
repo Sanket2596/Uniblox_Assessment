@@ -1,0 +1,9 @@
+{
+  "products": [
+    { "name": "Mechanical Keyboard",   "price": "89.99",  "inventory": 25 },
+    { "name": "USB-C Hub",             "price": "34.50",  "inventory": 40 },
+    { "name": "Wireless Mouse",        "price": "24.99",  "inventory": 60 },
+    { "name": "27\" 4K Monitor",       "price": "329.00", "inventory": 8 },
+    { "name": "Limited Edition Desk Mat", "price": "19.99", "inventory": 2 }
+  ]
+}
