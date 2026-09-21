@@ -8,7 +8,9 @@ from app.schemas.cart import (
     CartItemQuantityUpdate,
     CartRead,
 )
+from app.schemas.order import CheckoutRequest, OrderRead
 from app.services import cart as cart_service
+from app.services import checkout as checkout_service
 
 router = APIRouter(prefix="/carts", tags=["carts"])
 
@@ -45,3 +47,12 @@ def set_item_quantity(
 @router.delete("/{cart_id}/items/{product_id}", response_model=CartRead)
 def remove_item(cart_id: int, product_id: int, db: Session = Depends(get_db)):
     return cart_service.remove_item(db, cart_id, product_id)
+
+
+@router.post(
+    "/{cart_id}/checkout",
+    response_model=OrderRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def checkout(cart_id: int, payload: CheckoutRequest, db: Session = Depends(get_db)):
+    return checkout_service.checkout(db, cart_id, payload.idempotency_key)

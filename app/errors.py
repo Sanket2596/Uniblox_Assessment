@@ -37,6 +37,13 @@ class CartNotFound(NotFound):
         super().__init__(f"Cart {cart_id} does not exist", cart_id=cart_id)
 
 
+class OrderNotFound(NotFound):
+    code = "ORDER_NOT_FOUND"
+
+    def __init__(self, order_id: int):
+        super().__init__(f"Order {order_id} does not exist", order_id=order_id)
+
+
 class CartItemNotFound(NotFound):
     code = "CART_ITEM_NOT_FOUND"
 
@@ -71,6 +78,32 @@ class InsufficientInventory(AppError):
             product_id=product_id,
             requested=requested,
             available=available,
+        )
+
+
+class CartEmpty(Conflict):
+    """Raised on an attempt to check out a cart with no items."""
+
+    code = "CART_EMPTY"
+
+    def __init__(self, cart_id: int):
+        super().__init__(
+            f"Cart {cart_id} is empty and cannot be checked out", cart_id=cart_id
+        )
+
+
+class PaymentFailed(AppError):
+    """Raised when the payment gateway declines the charge. The order is persisted with
+    status FAILED for audit; inventory is left untouched."""
+
+    status_code = 402
+    code = "PAYMENT_FAILED"
+
+    def __init__(self, order_id: int, total_amount: int):
+        super().__init__(
+            f"Payment for order {order_id} was declined",
+            order_id=order_id,
+            total_amount=total_amount,
         )
 
 

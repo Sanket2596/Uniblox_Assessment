@@ -4,7 +4,7 @@ from fastapi import FastAPI
 
 from app.db import Base, SessionLocal, engine
 from app.errors import register_error_handlers
-from app.routers import cart, products
+from app.routers import cart, orders, products
 from app.seed import seed_products
 
 
@@ -20,6 +20,7 @@ app = FastAPI(title="Checkout & Rewards Service", version="0.1.0", lifespan=life
 register_error_handlers(app)
 app.include_router(products.router)
 app.include_router(cart.router)
+app.include_router(orders.router)
 
 
 @app.get("/health", tags=["meta"])

@@ -34,8 +34,9 @@ in a cart.** Concretely:
     so the client can surface the shortfall and soft-disable checkout. Write endpoints
     (`add_item` / `set_item_quantity`) reject any change that would push a line past live
     inventory (`409 INSUFFICIENT_INVENTORY`).
-  - **Checkout** (order step, not yet built): re-check inside the checkout transaction and
-    abort if a line can no longer be fulfilled. The frontend view is never trusted.
+  - **Checkout**: re-check inside the checkout transaction, under a pessimistic product
+    lock, and abort if a line can no longer be fulfilled. The frontend view is never
+    trusted (see the Checkout section below).
 
 - **Product deleted** — disallowed while referenced by a cart item
   (`cart_items.product_id` FK is `ON DELETE RESTRICT`).
@@ -47,17 +48,64 @@ down, honor the new one." Live pricing keeps a single source of truth (`products
 and defers the one moment that legally matters — the price charged — to checkout, where it
 is snapshotted into the order.
 
-## Checkout idempotency — "a cart is checked out at most once"
+## Checkout
 
-Enforced by an atomic conditional update at checkout (order step):
+Checkout is `POST /carts/{cart_id}/checkout`. It turns one cart into at most one paid
+`Order` and runs entirely inside a single DB transaction (`app.services.checkout`).
 
-```sql
-UPDATE carts SET status = 'CHECKED_OUT'
-WHERE id = :cart_id AND user_id = :user_id AND status = 'ACTIVE';
-```
+### Money is stored in integer cents
 
-The first request matches one row and proceeds; a concurrent or repeated request matches
-**zero** rows (status is already `CHECKED_OUT`) and is rejected with `409 Conflict`. This
-guards against double-clicks and racing requests without a separate lock. Overselling is
-prevented in the same transaction by re-checking and decrementing `product.inventory`,
-with the `ck_products_inventory_non_negative` constraint as the final backstop.
+Products and carts speak live `Decimal` dollars (`Numeric(12,2)`). The moment money is
+*frozen* — on an order — it is stored as **integer cents** (`Order.total_amount`,
+`Order.discount_applied`, `OrderItem.historical_price`). Integer arithmetic has no
+float/binary-rounding error, so a receipt total is exact and reproducible. `app.money.to_cents`
+is the single conversion point. The order API therefore returns money in **cents** (the
+Stripe convention); the cart API keeps returning `Decimal` dollars for live display.
+
+### Snapshot pricing on the order
+
+`OrderItem` copies `historical_name` and `historical_price` from the product at purchase
+time rather than linking to live product fields. A later admin price change or product
+edit must not rewrite past receipts or tax records. The cart stays live-priced (see above);
+the order is the immutable record of what was actually charged.
+
+### Idempotency — "a cart is checked out at most once"
+
+Two independent guards:
+
+1. **Client idempotency key.** The client sends a unique `idempotency_key` (a UUIDv4) in
+   the request body. It is stored `UNIQUE` on `orders`. On a retry, checkout finds the
+   existing order by key and returns it instead of placing a second one — safe against
+   network timeouts and double-submits. A previously *failed* charge is deterministic, so
+   the retry re-raises the same `402`.
+2. **Cart status.** Even with a *new* key, a cart that is already `CHECKED_OUT` is refused
+   (`409 CART_NOT_ACTIVE`) by the same `_require_active` guard the cart mutations use.
+
+### Overselling & concurrency
+
+Inside the transaction the referenced product rows are locked pessimistically
+(`SELECT ... FOR UPDATE`, ordered by id to avoid deadlocks), the cart's ACTIVE status is
+re-checked under the lock, and each line's quantity is re-validated against live inventory
+before `product.inventory` is decremented. The `ck_products_inventory_non_negative`
+constraint is the final backstop. On SQLite the row lock is a no-op, but WAL +
+`busy_timeout` serialize writers, so the invariant still holds in tests; on Postgres the
+lock is real.
+
+### Payment stub & failure handling
+
+`app.services.payment.charge` is a deterministic stub (a real gateway would sit here). It
+is called *after* the order and inventory changes are staged but *before* commit, so the
+checkout orchestration is cleanly decoupled from the DB mutations. The order moves through
+a `PENDING -> PAID | FAILED` state machine:
+
+- **PAID** — the cart is emptied and flipped to `CHECKED_OUT`; the transaction commits.
+- **FAILED** — the staged inventory deduction is reversed, the cart is left `ACTIVE` (the
+  customer can retry), and the order is committed with status `FAILED` as an audit record.
+  The endpoint returns `402 PAYMENT_FAILED`.
+
+### Coupons / discounts — deferred
+
+The flow reserves a coupon step and `Order.discount_applied`, but there is no coupon table
+yet, so `discount_applied` is always `0` and `total_amount == subtotal`. When a rewards
+system is added, coupon validation slots in between inventory validation and total
+calculation (validate + lock the coupon row, then subtract from the cents subtotal).
