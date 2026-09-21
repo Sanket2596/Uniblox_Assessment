@@ -25,6 +25,19 @@ class ProductNotFound(NotFound):
         super().__init__(f"Product {product_id} does not exist", product_id=product_id)
 
 
+class InsufficientInventory(AppError):
+    status_code = 409
+    code = "INSUFFICIENT_INVENTORY"
+
+    def __init__(self, product_id: int, requested: int, available: int):
+        super().__init__(
+            f"Product {product_id} has only {available} in stock; {requested} requested",
+            product_id=product_id,
+            requested=requested,
+            available=available,
+        )
+
+
 def _payload(code: str, message: str, details: dict | None = None) -> dict:
     body: dict[str, object] = {"code": code, "message": message}
     if details:
