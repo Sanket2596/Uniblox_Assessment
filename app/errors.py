@@ -18,11 +18,47 @@ class NotFound(AppError):
     code = "NOT_FOUND"
 
 
+class Conflict(AppError):
+    status_code = 409
+    code = "CONFLICT"
+
+
 class ProductNotFound(NotFound):
     code = "PRODUCT_NOT_FOUND"
 
     def __init__(self, product_id: int):
         super().__init__(f"Product {product_id} does not exist", product_id=product_id)
+
+
+class CartNotFound(NotFound):
+    code = "CART_NOT_FOUND"
+
+    def __init__(self, cart_id: int):
+        super().__init__(f"Cart {cart_id} does not exist", cart_id=cart_id)
+
+
+class CartItemNotFound(NotFound):
+    code = "CART_ITEM_NOT_FOUND"
+
+    def __init__(self, cart_id: int, product_id: int):
+        super().__init__(
+            f"Cart {cart_id} has no line for product {product_id}",
+            cart_id=cart_id,
+            product_id=product_id,
+        )
+
+
+class CartNotActive(Conflict):
+    """Raised on any attempt to mutate a cart that is no longer ACTIVE."""
+
+    code = "CART_NOT_ACTIVE"
+
+    def __init__(self, cart_id: int, status: str):
+        super().__init__(
+            f"Cart {cart_id} is {status} and can no longer be modified",
+            cart_id=cart_id,
+            status=status,
+        )
 
 
 class InsufficientInventory(AppError):

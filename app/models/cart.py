@@ -60,6 +60,13 @@ class Cart(Base):
     def total_quantity(self) -> int:
         return sum(item.quantity for item in self.items)
 
+    @property
+    def has_insufficient_stock(self) -> bool:
+        """True if any line requests more than the product's live inventory. Surfaced on
+        the cart view so the client can soft-disable checkout; the authoritative re-check
+        happens inside the checkout transaction (see docs/design-decisions.md)."""
+        return any(item.quantity > item.available_inventory for item in self.items)
+
 
 class CartItem(Base):
     __tablename__ = "cart_items"
@@ -89,6 +96,11 @@ class CartItem(Base):
     @property
     def product_name(self) -> str:
         return self.product.name
+
+    @property
+    def available_inventory(self) -> int:
+        """Live stock for this product, for surfacing availability on the cart view."""
+        return self.product.inventory
 
     @property
     def line_total(self) -> Decimal:

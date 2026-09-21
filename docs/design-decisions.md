@@ -28,10 +28,12 @@ in a cart.** Concretely:
 - **Stock dropped below the requested quantity** — this is *not* corrected at read time by
   the model layer; the cart row keeps the requested quantity. It is surfaced and handled
   at two points:
-  - **View cart** (cart endpoint, not yet built): compare each `CartItem.quantity`
-    against live `Product.inventory`. If stock is `0`, flag the line unavailable and
-    soft-disable checkout. If stock is lower than requested, auto-adjust the line down to
-    the available amount and tell the user.
+  - **View cart** (`GET /carts/{id}`): each line reports live `available_inventory`, and
+    the cart reports `has_insufficient_stock` (true if any line's quantity exceeds live
+    stock). A read is non-mutating — it does *not* silently adjust quantities on a `GET` —
+    so the client can surface the shortfall and soft-disable checkout. Write endpoints
+    (`add_item` / `set_item_quantity`) reject any change that would push a line past live
+    inventory (`409 INSUFFICIENT_INVENTORY`).
   - **Checkout** (order step, not yet built): re-check inside the checkout transaction and
     abort if a line can no longer be fulfilled. The frontend view is never trusted.
 
