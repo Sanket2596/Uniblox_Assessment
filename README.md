@@ -79,6 +79,13 @@ Response item:
 `price` is always a decimal string with exactly two places. Clients should parse it with a decimal
 type, not a float.
 
+### Carts
+
+A cart has a lifecycle `status` — `ACTIVE` (mutable) or `CHECKED_OUT` (immutable). Carts
+reflect live product prices and availability; nothing is reserved by being in a cart. See
+[docs/design-decisions.md](docs/design-decisions.md) for how price/availability changes
+before checkout are handled and how one-time checkout is enforced.
+
 ### Meta
 
 | Method | Path      | Success |

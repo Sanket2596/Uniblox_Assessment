@@ -1,9 +1,11 @@
+import enum
 from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
+    Enum,
     ForeignKey,
     Integer,
     String,
@@ -16,6 +18,14 @@ from app.db import Base
 from app.models.product import Product
 
 
+class CartStatus(str, enum.Enum):
+    """Cart lifecycle. A cart is mutable only while ACTIVE; checkout flips it to
+    CHECKED_OUT exactly once, after which it is immutable history."""
+
+    ACTIVE = "ACTIVE"
+    CHECKED_OUT = "CHECKED_OUT"
+
+
 class Cart(Base):
     __tablename__ = "carts"
 
@@ -25,6 +35,14 @@ class Cart(Base):
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # Idempotency guard for checkout: the atomic transition ACTIVE -> CHECKED_OUT
+    # can succeed only once (see docs/design-decisions.md).
+    status: Mapped[CartStatus] = mapped_column(
+        Enum(CartStatus, name="cart_status", native_enum=False, length=16),
+        nullable=False,
+        default=CartStatus.ACTIVE,
+        server_default=CartStatus.ACTIVE.value,
     )
 
     items: Mapped[list["CartItem"]] = relationship(

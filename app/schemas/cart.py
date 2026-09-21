@@ -3,6 +3,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.cart import CartStatus
+
 
 class CartItemCreate(BaseModel):
     """Payload for adding a product to a cart.
@@ -31,6 +33,7 @@ class CartRead(BaseModel):
 
     id: int
     user_id: str
+    status: CartStatus
     created_at: datetime
     items: list[CartItemRead]
     subtotal: Decimal
