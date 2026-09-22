@@ -11,10 +11,17 @@ class Base(DeclarativeBase):
 
 def make_engine(url: str):
     is_sqlite = url.startswith("sqlite")
-    engine = create_engine(
-        url,
-        connect_args={"check_same_thread": False} if is_sqlite else {},
-    )
+    kwargs: dict = {
+        "connect_args": {"check_same_thread": False} if is_sqlite else {},
+    }
+    if not is_sqlite:
+        # Pooled engines (e.g. Postgres): check a connection is alive before handing it out
+        # (a dead one raises OperationalError -> 503 + reconnect), and cap the wait for a
+        # free connection so pool exhaustion fails fast as a retryable 503 (SQLAlchemy
+        # TimeoutError) instead of hanging the request.
+        kwargs["pool_pre_ping"] = True
+        kwargs["pool_timeout"] = 5
+    engine = create_engine(url, **kwargs)
     if is_sqlite:
 
         @event.listens_for(engine, "connect")
