@@ -17,3 +17,14 @@ def to_cents(amount: Decimal) -> int:
     lossy step. Uses exact Decimal arithmetic — never float — so 19.99 -> 1999 exactly.
     """
     return int(amount.quantize(_CENTS, rounding=ROUND_HALF_UP) * 100)
+
+
+def from_cents(cents: int) -> Decimal:
+    """Inverse of `to_cents`: integer cents back to a two-place `Decimal` for display."""
+    return (Decimal(cents) / 100).quantize(_CENTS)
+
+
+def format_cents(cents: int) -> str:
+    """Human-facing two-place string for a receipt, e.g. 1999 -> "19.99". Currency-neutral;
+    the caller adds the symbol so money.py stays free of currency policy."""
+    return f"{from_cents(cents):.2f}"

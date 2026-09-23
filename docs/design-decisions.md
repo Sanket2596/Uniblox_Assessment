@@ -218,6 +218,43 @@ a real adapter goes.
 
 ---
 
+### Decision: A one-function payment seam (not "checkout == payment"), and a derived receipt
+
+**Context:** The brief allows treating a successful checkout as a successful payment, *or*
+a small payment abstraction. Which, and where does the "receipt" come from?
+
+**Options considered:** (a) no payment concept — reaching the end of checkout *is* success;
+(b) a one-function seam `payment.charge(amount, *, idempotency_key) -> PAID | FAILED` that
+today approves every valid charge; (c) a full gateway integration.
+
+**Choice:** (b), with the receipt as a **derived projection** of the placed order
+(`Receipt.from_order`, served at `GET /orders/{id}/receipt`), not a stored artifact.
+
+**Why:** (a) is the least code but has nowhere to express a *decline*, and the decline path
+is exactly what carries the interesting behaviour — inventory reversal, the `FAILED` audit
+order, the cart released for retry, the `402`, and idempotent replay of a failure. Collapse
+payment into "control reached the end" and all of that, plus its tests, has no home. (b)
+keeps that behaviour and costs one function; `charge` returning `PAID` for every non-zero
+amount means a valid checkout *does* succeed today (so it reads like option (a) from
+outside), while the seam is the single line a real adapter replaces — it already takes the
+idempotency key a real gateway would de-duplicate on. (c) is out of scope.
+
+The receipt is **generated, never persisted**, because the order already stores everything
+it needs: the snapshot lines (`historical_name` / `historical_price`), the discount, and
+the total. Storing a second copy would be a denormalised record that can disagree with the
+order. Deriving it means the same receipt can be produced at any time and is provably immune
+to later product renames/reprices/deletes — the property `I5` is built on, and the one the
+receipt test pins down by editing the product afterwards. Money is rendered both in integer
+cents (machine) and as a two-place string (human), so a client shows "19.99" without
+re-implementing the cents→dollars rule.
+
+**Consequences:** `POST /checkout` still returns the order (`OrderRead`, unchanged); the
+receipt is a separate read so the contract of checkout did not move. A `FAILED` order also
+has a receipt, with a "not charged" message — useful for support. When coupons land, the
+discount line already has a place on the receipt.
+
+---
+
 ### Decision: Cart lifecycle as a status column, not delete-on-checkout
 
 **Context:** After checkout, what is a cart?
@@ -384,12 +421,15 @@ detail (SQL, stack traces, exception messages) is logged, never serialized to th
   and live availability on the read model.
 - Checkout: idempotency key, cart claim, conditional inventory deduction, snapshot
   order lines in integer cents, deterministic gateway stub, `PENDING → PAID | FAILED`.
-- Uniform error envelope with stable codes.
+- Receipt: `GET /orders/{id}/receipt` derives an itemized, human-facing receipt from the
+  order snapshot (cents + formatted strings), reproducible and immune to product changes.
+- Uniform error envelope with stable codes, plus DB-fault handlers (`409` for an unmapped
+  constraint, retryable `503` for transient/pool faults, `500` with a `request_id` for
+  bugs) and framework errors (unknown route / method) wrapped in the same envelope.
 - Same-key race recovery: a request that loses the cart claim or the unique insert to a
   competitor with the same key returns that competitor's order.
-- 38 tests, including a genuine concurrency test that fails on the naïve implementation
-  and two race-recovery tests that drive checkout into the lost-claim and lost-insert
-  branches.
+- Tests across checkout, race recovery, error handling, and receipt generation, including a
+  genuine concurrency test that fails on the naïve implementation.
 
 **Deferred (and what the seam looks like)**
 
